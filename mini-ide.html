@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini VSCode</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1e1e1e;
+            color: #cccccc;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* 文件资源管理器 */
+        .sidebar {
+            width: 250px;
+            background-color: #252526;
+            border-right: 1px solid #3c3c3c;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 10px;
+            background-color: #2d2d30;
+            border-bottom: 1px solid #3c3c3c;
+            font-weight: bold;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .file-explorer {
+            flex: 1;
+            overflow-y: auto;
+            padding: 5px;
+        }
+
+        .file-item {
+            padding: 4px 8px;
+            cursor: pointer;
+            border-radius: 3px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+        }
+
+        .file-item:hover {
+            background-color: #2a2d2e;
+        }
+
+        .file-item.selected {
+            background-color: #094771;
+        }
+
+        .file-item.directory {
+            font-weight: 500;
+        }
+
+        .file-item.directory::before {
+            content: "📁 ";
+            margin-right: 4px;
+        }
+
+        .file-item.file::before {
+            content: "📄 ";
+            margin-right: 4px;
+        }
+
+        /* 主编辑区域 */
+        .main-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .tab-bar {
+            height: 35px;
+            background-color: #2d2d30;
+            border-bottom: 1px solid #3c3c3c;
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+        }
+
+        .tab {
+            padding: 8px 12px;
+            background-color: #2d2d30;
+            border: 1px solid #3c3c3c;
+            border-bottom: none;
+            margin-right: 2px;
+            cursor: pointer;
+            font-size: 13px;
+            border-radius: 3px 3px 0 0;
+        }
+
+        .tab.active {
+            background-color: #1e1e1e;
+            border-bottom: 1px solid #1e1e1e;
+        }
+
+        .tab .close-btn {
+            margin-left: 8px;
+            cursor: pointer;
+            opacity: 0.7;
+        }
+
+        .tab .close-btn:hover {
+            opacity: 1;
+        }
+
+        .editor-container {
+            flex: 1;
+            position: relative;
+        }
+
+        .editor {
+            width: 100%;
+            height: 100%;
+            border: none;
+            outline: none;
+            background-color: #1e1e1e;
+            color: #cccccc;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            padding: 10px;
+            resize: none;
+        }
+
+        .status-bar {
+            height: 22px;
+            background-color: #007acc;
+            color: white;
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            font-size: 12px;
+        }
+
+        .welcome-screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            text-align: center;
+        }
+
+        .welcome-screen h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #007acc;
+        }
+
+        .welcome-screen p {
+            font-size: 14px;
+            opacity: 0.8;
+            margin-bottom: 10px;
+        }
+
+        .open-folder-btn {
+            padding: 10px 20px;
+            background-color: #007acc;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 20px;
+        }
+
+        .open-folder-btn:hover {
+            background-color: #005a9e;
+        }
+
+        /* 滚动条样式 */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1e1e1e;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #424242;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 文件资源管理器 -->
+        <div class="sidebar">
+            <div class="sidebar-header">Explorer</div>
+            <div class="file-explorer" id="fileExplorer">
+                <div class="welcome-screen">
+                    <h1>Mini VSCode</h1>
+                    <p>Welcome to your minimal IDE!</p>
+                    <p>Open a folder to get started.</p>
+                    <button class="open-folder-btn" onclick="openFolder()">Open Folder</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 主编辑区域 -->
+        <div class="main-area">
+            <div class="tab-bar" id="tabBar">
+                <!-- 标签页将在这里动态添加 -->
+            </div>
+            <div class="editor-container">
+                <div class="welcome-screen" id="welcomeScreen">
+                    <h1>🚀 Mini VSCode</h1>
+                    <p>A minimal IDE with just the essentials:</p>
+                    <p>📁 File Explorer + ✏️ Text Editor</p>
+                    <p>Select a file from the explorer to start editing</p>
+                </div>
+                <textarea class="editor" id="editor" style="display: none;" placeholder="Start typing..."></textarea>
+            </div>
+            <div class="status-bar">
+                <span id="statusText">Ready</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="mini-ide.js"></script>
+</body>
+</html>

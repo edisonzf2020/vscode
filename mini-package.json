@@ -1,0 +1,27 @@
+{
+  "name": "mini-vscode",
+  "version": "0.1.0",
+  "description": "A minimal IDE with file explorer and text editor",
+  "main": "out/mini-main-simple.js",
+  "scripts": {
+    "build": "tsc src/mini-main-simple.ts --outDir out --target es2020 --module commonjs --esModuleInterop --skipLibCheck",
+    "start": "npm run build && electron .",
+    "dev": "NODE_ENV=development npm start"
+  },
+  "keywords": [
+    "ide",
+    "editor",
+    "minimal",
+    "vscode"
+  ],
+  "author": "Mini VSCode Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "typescript": "^4.9.0"
+  },
+  "dependencies": {
+    "electron": "^22.0.0",
+    "@electron/remote": "^2.0.0"
+  }
+}
