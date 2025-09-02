@@ -4,7 +4,6 @@
  */
 
 const { ipcRenderer } = require('electron');
-const { dialog } = require('@electron/remote');
 const path = require('path');
 
 // 全局状态
@@ -22,22 +21,42 @@ const statusText = document.getElementById('statusText');
 console.log('🎯 Mini IDE frontend initialized');
 
 /**
+ * 测试函数
+ */
+function testFunction() {
+    console.log('🧪 Test function called');
+    updateStatus('Test function executed');
+
+    // 测试创建一个简单的文件列表
+    const testItems = [
+        { name: 'test.txt', isDirectory: false, path: '/test/test.txt' },
+        { name: 'folder1', isDirectory: true, path: '/test/folder1' },
+        { name: 'script.js', isDirectory: false, path: '/test/script.js' }
+    ];
+
+    renderFileExplorer(testItems, '/test');
+}
+
+/**
  * 打开文件夹
  */
 async function openFolder() {
     try {
-        const result = await dialog.showOpenDialog({
-            properties: ['openDirectory'],
-            title: 'Select Workspace Folder'
-        });
+        console.log('📁 Requesting folder selection...');
+        const result = await ipcRenderer.invoke('show-open-dialog');
 
-        if (!result.canceled && result.filePaths.length > 0) {
+        if (result.success && result.filePaths && result.filePaths.length > 0) {
             const folderPath = result.filePaths[0];
             console.log('📁 Opening folder:', folderPath);
-            
+
             currentWorkspace = folderPath;
             await loadWorkspace(folderPath);
             updateStatus(`Opened: ${path.basename(folderPath)}`);
+        } else if (result.canceled) {
+            console.log('📁 Folder selection canceled');
+        } else {
+            console.error('❌ Error in folder selection:', result.error);
+            updateStatus('Error opening folder');
         }
     } catch (error) {
         console.error('❌ Error opening folder:', error);
@@ -51,7 +70,7 @@ async function openFolder() {
 async function loadWorkspace(folderPath) {
     try {
         const result = await ipcRenderer.invoke('read-directory', folderPath);
-        
+
         if (result.success) {
             renderFileExplorer(result.items, folderPath);
         } else {
@@ -68,8 +87,9 @@ async function loadWorkspace(folderPath) {
  * 渲染文件资源管理器
  */
 function renderFileExplorer(items, basePath) {
+    console.log('🎨 Rendering file explorer with', items.length, 'items');
     fileExplorer.innerHTML = '';
-    
+
     // 添加工作区根目录
     const rootItem = document.createElement('div');
     rootItem.className = 'file-item directory';
@@ -91,15 +111,23 @@ function renderFileExplorer(items, basePath) {
         fileItem.className = `file-item ${item.isDirectory ? 'directory' : 'file'}`;
         fileItem.textContent = item.name;
         fileItem.style.paddingLeft = '20px';
-        
+
         if (!item.isDirectory) {
-            fileItem.addEventListener('click', () => openFile(item.path));
+            fileItem.addEventListener('click', () => {
+                console.log('📄 File clicked:', item.name);
+                openFile(item.path);
+            });
         } else {
-            fileItem.addEventListener('click', () => toggleDirectory(item.path, fileItem));
+            fileItem.addEventListener('click', () => {
+                console.log('📁 Directory clicked:', item.name);
+                // TODO: 实现目录展开功能
+            });
         }
-        
+
         fileExplorer.appendChild(fileItem);
     });
+
+    console.log('✅ File explorer rendered successfully');
 }
 
 /**
@@ -108,7 +136,7 @@ function renderFileExplorer(items, basePath) {
 async function openFile(filePath) {
     try {
         console.log('📄 Opening file:', filePath);
-        
+
         // 如果文件已经打开，直接切换到该标签
         if (openFiles.has(filePath)) {
             switchToFile(filePath);
@@ -116,7 +144,7 @@ async function openFile(filePath) {
         }
 
         const result = await ipcRenderer.invoke('read-file', filePath);
-        
+
         if (result.success) {
             // 添加到打开文件列表
             openFiles.set(filePath, {
@@ -127,10 +155,10 @@ async function openFile(filePath) {
 
             // 创建标签页
             createTab(filePath);
-            
+
             // 切换到新文件
             switchToFile(filePath);
-            
+
             updateStatus(`Opened: ${path.basename(filePath)}`);
         } else {
             console.error('❌ Error opening file:', result.error);
@@ -149,19 +177,19 @@ function createTab(filePath) {
     const tab = document.createElement('div');
     tab.className = 'tab';
     tab.dataset.filePath = filePath;
-    
+
     const fileName = path.basename(filePath);
     tab.innerHTML = `
         <span class="tab-name">${fileName}</span>
         <span class="close-btn" onclick="closeFile('${filePath}')">&times;</span>
     `;
-    
+
     tab.addEventListener('click', (e) => {
         if (!e.target.classList.contains('close-btn')) {
             switchToFile(filePath);
         }
     });
-    
+
     tabBar.appendChild(tab);
 }
 
@@ -180,12 +208,12 @@ function switchToFile(filePath) {
     // 切换到新文件
     activeFile = filePath;
     const fileData = openFiles.get(filePath);
-    
+
     // 更新编辑器内容
     editor.value = fileData.content;
     editor.style.display = 'block';
     welcomeScreen.style.display = 'none';
-    
+
     // 更新标签页状态
     document.querySelectorAll('.tab').forEach(tab => {
         tab.classList.remove('active');
@@ -193,10 +221,10 @@ function switchToFile(filePath) {
             tab.classList.add('active');
         }
     });
-    
+
     // 聚焦编辑器
     editor.focus();
-    
+
     updateStatus(`Editing: ${path.basename(filePath)}`);
 }
 
@@ -205,7 +233,7 @@ function switchToFile(filePath) {
  */
 function closeFile(filePath) {
     const fileData = openFiles.get(filePath);
-    
+
     // 如果文件已修改，询问是否保存
     if (fileData && fileData.modified) {
         const result = confirm(`Save changes to ${path.basename(filePath)}?`);
@@ -213,20 +241,20 @@ function closeFile(filePath) {
             saveFile(filePath);
         }
     }
-    
+
     // 移除标签页
     const tab = document.querySelector(`[data-file-path="${filePath}"]`);
     if (tab) {
         tab.remove();
     }
-    
+
     // 从打开文件列表中移除
     openFiles.delete(filePath);
-    
+
     // 如果关闭的是当前活动文件
     if (activeFile === filePath) {
         activeFile = null;
-        
+
         // 如果还有其他打开的文件，切换到第一个
         if (openFiles.size > 0) {
             const firstFile = openFiles.keys().next().value;
@@ -245,13 +273,13 @@ function closeFile(filePath) {
  */
 async function saveFile(filePath = activeFile) {
     if (!filePath || !openFiles.has(filePath)) return;
-    
+
     try {
         const fileData = openFiles.get(filePath);
         const content = activeFile === filePath ? editor.value : fileData.content;
-        
+
         const result = await ipcRenderer.invoke('write-file', filePath, content);
-        
+
         if (result.success) {
             fileData.content = content;
             fileData.originalContent = content;
@@ -277,7 +305,7 @@ function updateTabModifiedState(filePath) {
         const fileData = openFiles.get(filePath);
         const tabName = tab.querySelector('.tab-name');
         const fileName = path.basename(filePath);
-        
+
         if (fileData.modified) {
             tabName.textContent = `● ${fileName}`;
         } else {

@@ -8,7 +8,7 @@
  * 只包含：文件资源管理器 + 编辑器
  */
 
-const { app, BrowserWindow, Menu, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -34,7 +34,7 @@ const APP_CONFIG = {
  */
 function createMainWindow() {
     console.log('🪟 Creating main window...');
-    
+
     mainWindow = new BrowserWindow({
         width: APP_CONFIG.window.width,
         height: APP_CONFIG.window.height,
@@ -53,14 +53,14 @@ function createMainWindow() {
     // 加载HTML文件
     const htmlPath = path.join(__dirname, 'mini-ide.html');
     console.log('📄 Loading HTML from:', htmlPath);
-    
+
     mainWindow.loadFile(htmlPath);
 
     // 窗口准备好后显示
     mainWindow.once('ready-to-show', () => {
         console.log('✅ Window ready to show');
         mainWindow.show();
-        
+
         // 开发模式下打开开发者工具
         if (process.env.NODE_ENV === 'development') {
             mainWindow.webContents.openDevTools();
@@ -152,7 +152,7 @@ function setupMenu() {
  */
 function setupIPC() {
     console.log('📡 Setting up IPC communication...');
-    
+
     // 读取文件
     ipcMain.handle('read-file', async (event, filePath) => {
         try {
@@ -187,6 +187,24 @@ function setupIPC() {
             return { success: false, error: error.message };
         }
     });
+
+    // 显示打开文件夹对话框
+    ipcMain.handle('show-open-dialog', async (event) => {
+        try {
+            const result = await dialog.showOpenDialog(mainWindow, {
+                properties: ['openDirectory'],
+                title: 'Select Workspace Folder'
+            });
+
+            return {
+                success: true,
+                canceled: result.canceled,
+                filePaths: result.filePaths
+            };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
 }
 
 /**
@@ -194,10 +212,10 @@ function setupIPC() {
  */
 function onAppReady() {
     console.log('✅ Electron app ready');
-    
+
     setupIPC();
     createMainWindow();
-    
+
     console.log('🎉 Mini VSCode started successfully!');
 }
 
