@@ -205,6 +205,16 @@ function setupIPC() {
             return { success: false, error: error.message };
         }
     });
+
+    // 创建目录
+    ipcMain.handle('create-directory', async (event, dirPath) => {
+        try {
+            await fs.promises.mkdir(dirPath, { recursive: true });
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
 }
 
 /**
