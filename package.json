@@ -5,7 +5,16 @@
   "main": "mini-main-simple.js",
   "scripts": {
     "start": "electron .",
-    "dev": "NODE_ENV=development electron ."
+    "dev": "NODE_ENV=development electron .",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:debug": "playwright test --debug",
+    "test:e2e": "node test/e2e/vscode-test.js",
+    "test:gui": "mocha test/e2e/gui.test.js --timeout 60000 --ui tdd",
+    "test:functional": "mocha test/e2e/functional.test.js --timeout 60000 --ui tdd",
+    "test:debug": "playwright test test/e2e/gui-debug.test.js",
+    "test:quick": "playwright test test/e2e/quick-test.js",
+    "test:root": "playwright test test/e2e/root-collapse-test.js"
   },
   "keywords": [
     "ide",
@@ -17,5 +26,12 @@
   "license": "MIT",
   "dependencies": {
     "electron": "^22.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@vscode/test-electron": "^2.5.2",
+    "glob": "^11.0.3",
+    "mocha": "^11.7.2",
+    "playwright": "^1.55.0"
   }
 }

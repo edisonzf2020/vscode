@@ -6,6 +6,26 @@
 const { ipcRenderer } = require('electron');
 const path = require('path');
 
+// 辅助函数：安全的路径连接
+function joinPath(dir, file) {
+    if (dir.endsWith('/') || dir.endsWith('\\')) {
+        return dir + file;
+    }
+    return dir + '/' + file;
+}
+
+// 辅助函数：获取目录名
+function getDirName(filePath) {
+    const lastSlash = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+    return lastSlash > 0 ? filePath.substring(0, lastSlash) : filePath;
+}
+
+// 辅助函数：获取文件名
+function getBaseName(filePath) {
+    const lastSlash = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+    return lastSlash >= 0 ? filePath.substring(lastSlash + 1) : filePath;
+}
+
 // 全局状态
 let currentWorkspace = null;
 let openFiles = new Map(); // 存储打开的文件
@@ -21,6 +41,78 @@ const welcomeScreen = document.getElementById('welcomeScreen');
 const statusText = document.getElementById('statusText');
 
 console.log('🎯 Mini IDE frontend initialized');
+
+// 自定义对话框功能
+let modalResolve = null;
+
+/**
+ * 显示自定义输入对话框
+ */
+function showModal(title, placeholder = '', defaultValue = '') {
+    return new Promise((resolve) => {
+        modalResolve = resolve;
+
+        const modalOverlay = document.getElementById('modalOverlay');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalInput = document.getElementById('modalInput');
+
+        modalTitle.textContent = title;
+        modalInput.placeholder = placeholder;
+        modalInput.value = defaultValue;
+
+        modalOverlay.style.display = 'flex';
+        modalInput.focus();
+        modalInput.select();
+    });
+}
+
+/**
+ * 隐藏模态对话框
+ */
+function hideModal() {
+    const modalOverlay = document.getElementById('modalOverlay');
+    modalOverlay.style.display = 'none';
+
+    // 只有在取消时才resolve null，确认时不在这里resolve
+    if (modalResolve) {
+        modalResolve(null);
+        modalResolve = null;
+    }
+}
+
+/**
+ * 确认模态对话框
+ */
+function confirmModal() {
+    const modalInput = document.getElementById('modalInput');
+    const value = modalInput.value.trim();
+
+    console.log('📄 Modal confirmed with value:', value);
+
+    // 先resolve值，再隐藏模态框
+    if (modalResolve) {
+        modalResolve(value);
+        modalResolve = null;
+    }
+
+    // 手动隐藏模态框，不调用hideModal()以避免冲突
+    const modalOverlay = document.getElementById('modalOverlay');
+    modalOverlay.style.display = 'none';
+}
+
+// 模态对话框键盘事件
+document.addEventListener('keydown', (e) => {
+    const modalOverlay = document.getElementById('modalOverlay');
+    if (modalOverlay.style.display === 'flex') {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            confirmModal();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            hideModal();
+        }
+    }
+});
 
 /**
  * 获取文件扩展名
@@ -59,18 +151,74 @@ function getFileTypeClass(fileName) {
 /**
  * 测试函数
  */
-function testFunction() {
+async function testFunction() {
     console.log('🧪 Test function called');
-    updateStatus('Test function executed');
+    updateStatus('Creating test workspace...');
 
-    // 测试创建一个简单的文件列表
-    const testItems = [
-        { name: 'test.txt', isDirectory: false, path: '/test/test.txt' },
-        { name: 'folder1', isDirectory: true, path: '/test/folder1' },
-        { name: 'script.js', isDirectory: false, path: '/test/script.js' }
-    ];
+    try {
+        // 创建真实的测试工作区
+        console.log('🧪 Attempting to create test workspace...');
+        const testWorkspacePath = await createTestWorkspace();
 
-    renderFileExplorer(testItems, '/test');
+        if (testWorkspacePath) {
+            console.log('🧪 Loading real test workspace:', testWorkspacePath);
+            updateStatus('Loading test workspace...');
+            await loadWorkspace(testWorkspacePath);
+            updateStatus('Real test workspace loaded');
+            console.log('✅ Real test workspace loaded successfully');
+        } else {
+            throw new Error('Failed to create test workspace');
+        }
+    } catch (error) {
+        // 回退到虚拟测试数据
+        console.log('⚠️ Failed to create real workspace, using virtual test data:', error.message);
+        updateStatus('Using virtual test data...');
+
+        const testItems = [
+            { name: 'test.txt', isDirectory: false, path: '/test/test.txt' },
+            { name: 'folder1', isDirectory: true, path: '/test/folder1' },
+            { name: 'script.js', isDirectory: false, path: '/test/script.js' }
+        ];
+
+        currentWorkspace = '/test';
+        fileTree.set('/test', testItems);
+
+        fileTree.set('/test/folder1', [
+            { name: 'nested.txt', isDirectory: false, path: '/test/folder1/nested.txt' },
+            { name: 'subfolder', isDirectory: true, path: '/test/folder1/subfolder' }
+        ]);
+
+        renderFileExplorer(testItems, '/test');
+        updateStatus('Virtual test data loaded');
+    }
+
+    console.log('🧪 Test completed - current workspace:', currentWorkspace);
+}
+
+/**
+ * 创建真实的测试工作区
+ */
+async function createTestWorkspace() {
+    try {
+        console.log('🧪 Requesting test workspace creation from main process...');
+
+        // 请求主进程创建测试工作区
+        const result = await ipcRenderer.invoke('create-test-workspace');
+
+        console.log('🧪 Test workspace creation result:', result);
+
+        if (result && result.success) {
+            console.log('✅ Created test workspace at:', result.path);
+            return result.path;
+        } else {
+            console.error('❌ Failed to create test workspace:', result ? result.error : 'No result returned');
+            return null;
+        }
+    } catch (error) {
+        console.error('❌ Error creating test workspace:', error);
+        console.error('❌ Error stack:', error.stack);
+        return null;
+    }
 }
 
 /**
@@ -87,7 +235,7 @@ async function openFolder() {
 
             currentWorkspace = folderPath;
             await loadWorkspace(folderPath);
-            updateStatus(`Opened: ${path.basename(folderPath)}`);
+            updateStatus(`Opened: ${getBaseName(folderPath)}`);
         } else if (result.canceled) {
             console.log('📁 Folder selection canceled');
         } else {
@@ -105,14 +253,23 @@ async function openFolder() {
  */
 async function loadWorkspace(folderPath) {
     try {
+        console.log('📁 Loading workspace:', folderPath);
         const result = await ipcRenderer.invoke('read-directory', folderPath);
 
         if (result.success) {
+            // 设置当前工作区 - 这是关键的修复！
+            currentWorkspace = folderPath;
+            // 确保全局可访问
+            window.currentWorkspace = currentWorkspace;
+            console.log('✅ Set currentWorkspace to:', currentWorkspace);
+
             // 存储根目录内容到文件树
             fileTree.set(folderPath, result.items);
             // 默认展开根目录
             expandedDirectories.add(folderPath);
             renderFileExplorer(result.items, folderPath);
+
+            console.log('✅ Workspace loaded successfully:', folderPath);
         } else {
             console.error('❌ Error loading workspace:', result.error);
             updateStatus('Error loading workspace');
@@ -126,8 +283,10 @@ async function loadWorkspace(folderPath) {
 /**
  * 渲染文件资源管理器
  */
-function renderFileExplorer(items, basePath, level = 0) {
+function renderFileExplorer(items, basePath, level = 0, parentElement = null) {
     console.log('🎨 Rendering file explorer with', items.length, 'items at level', level);
+
+    const container = parentElement || fileExplorer;
 
     if (level === 0) {
         fileExplorer.innerHTML = '';
@@ -137,8 +296,47 @@ function renderFileExplorer(items, basePath, level = 0) {
         rootItem.className = 'file-item directory expanded';
         rootItem.style.fontWeight = 'bold';
         rootItem.style.marginBottom = '5px';
-        rootItem.style.paddingLeft = '5px';
-        rootItem.textContent = path.basename(basePath);
+        rootItem.style.paddingLeft = '25px'; // 为展开图标留出空间
+        rootItem.textContent = getBaseName(basePath);
+        rootItem.dataset.path = basePath;
+        rootItem.dataset.isDirectory = 'true';
+
+        // 添加展开图标
+        const expandIcon = document.createElement('span');
+        expandIcon.className = 'expand-icon';
+        expandIcon.style.left = '5px';
+        expandIcon.style.position = 'absolute';
+        expandIcon.style.cursor = 'pointer';
+        expandIcon.style.userSelect = 'none';
+        expandIcon.style.width = '16px';
+        expandIcon.style.height = '16px';
+        expandIcon.style.display = 'flex';
+        expandIcon.style.alignItems = 'center';
+        expandIcon.style.justifyContent = 'center';
+        expandIcon.style.fontSize = '12px';
+        expandIcon.style.color = '#cccccc';
+        expandIcon.style.top = '50%';
+        expandIcon.style.transform = 'translateY(-50%)';
+
+        // 根目录默认展开，所以显示向下箭头
+        expandIcon.textContent = '▼';
+        expandIcon.title = `Click to collapse ${getBaseName(basePath)}`;
+
+        expandIcon.addEventListener('click', (e) => {
+            e.stopPropagation();
+            console.log('🔄 Root expand icon clicked for:', basePath);
+            toggleRootDirectory(basePath);
+        });
+
+        rootItem.appendChild(expandIcon);
+
+        // 添加点击事件
+        rootItem.addEventListener('click', (e) => {
+            if (!e.target.classList.contains('expand-icon')) {
+                console.log('📁 Root directory clicked:', basePath);
+                toggleRootDirectory(basePath);
+            }
+        });
 
         // 添加右键菜单支持
         rootItem.addEventListener('contextmenu', (e) => {
@@ -168,22 +366,54 @@ function renderFileExplorer(items, basePath, level = 0) {
                 fileItem.classList.add('expanded');
             }
 
+            // 设置目录的padding，为展开图标留出空间
+            fileItem.style.paddingLeft = `${paddingLeft + 20}px`;
+
             // 添加展开图标
             const expandIcon = document.createElement('span');
             expandIcon.className = 'expand-icon';
+            expandIcon.style.left = `${paddingLeft}px`;
+            expandIcon.style.position = 'absolute';
+            expandIcon.style.cursor = 'pointer';
+            expandIcon.style.userSelect = 'none';
+            expandIcon.style.width = '16px';
+            expandIcon.style.height = '16px';
+            expandIcon.style.display = 'flex';
+            expandIcon.style.alignItems = 'center';
+            expandIcon.style.justifyContent = 'center';
+            expandIcon.style.fontSize = '12px';
+            expandIcon.style.color = '#cccccc';
+            expandIcon.style.top = '50%';
+            expandIcon.style.transform = 'translateY(-50%)';
+
+            // 直接设置图标内容，不依赖CSS
+            expandIcon.textContent = isExpanded ? '▼' : '▶';
+            expandIcon.title = `Click to ${isExpanded ? 'collapse' : 'expand'} ${item.name}`;
+
             expandIcon.addEventListener('click', (e) => {
                 e.stopPropagation();
+                console.log('🔄 Expand icon clicked for:', item.name, 'at path:', item.path);
                 toggleDirectory(item.path);
             });
+
+            console.log('📁 Created expand icon for:', item.name, 'expanded:', isExpanded, 'icon:', expandIcon.textContent);
+
+            // 先添加展开图标
             fileItem.appendChild(expandIcon);
 
-            fileItem.addEventListener('click', () => {
-                console.log('📁 Directory clicked:', item.name);
-                toggleDirectory(item.path);
+            fileItem.addEventListener('click', (e) => {
+                // 如果点击的不是展开图标，也触发展开/折叠
+                if (!e.target.classList.contains('expand-icon')) {
+                    console.log('📁 Directory clicked:', item.name, 'at path:', item.path);
+                    toggleDirectory(item.path);
+                } else {
+                    console.log('📁 Expand icon was clicked, handled by icon event');
+                }
             });
         } else {
             const fileType = getFileTypeClass(item.name);
             fileItem.className = `file-item file ${fileType}`;
+            fileItem.style.paddingLeft = `${paddingLeft}px`;
 
             fileItem.addEventListener('click', () => {
                 console.log('📄 File clicked:', item.name);
@@ -192,7 +422,6 @@ function renderFileExplorer(items, basePath, level = 0) {
         }
 
         fileItem.textContent = item.name;
-        fileItem.style.paddingLeft = `${paddingLeft}px`;
         fileItem.dataset.path = item.path;
         fileItem.dataset.isDirectory = item.isDirectory;
 
@@ -202,19 +431,67 @@ function renderFileExplorer(items, basePath, level = 0) {
             showContextMenu(e.clientX, e.clientY, item.path, item.isDirectory);
         });
 
-        fileExplorer.appendChild(fileItem);
+        container.appendChild(fileItem);
 
         // 如果是展开的目录，递归渲染子项
         if (item.isDirectory && expandedDirectories.has(item.path)) {
             const children = fileTree.get(item.path);
             if (children) {
-                renderFileExplorer(children, item.path, level + 1);
+                renderFileExplorer(children, item.path, level + 1, container);
             }
         }
     });
 
     if (level === 0) {
         console.log('✅ File explorer rendered successfully');
+    }
+}
+
+/**
+ * 切换根目录展开/折叠状态
+ */
+async function toggleRootDirectory(rootPath) {
+    console.log('📁 Toggling root directory:', rootPath);
+
+    const rootItem = document.querySelector('.file-item.directory[data-path="' + rootPath + '"]');
+    const expandIcon = rootItem ? rootItem.querySelector('.expand-icon') : null;
+
+    if (rootItem && rootItem.classList.contains('expanded')) {
+        // 折叠根目录
+        rootItem.classList.remove('expanded');
+        if (expandIcon) {
+            expandIcon.textContent = '▶';
+            expandIcon.title = `Click to expand ${getBaseName(rootPath)}`;
+        }
+
+        // 隐藏所有子项
+        const allItems = document.querySelectorAll('.file-item');
+        allItems.forEach(item => {
+            if (item !== rootItem) {
+                item.style.display = 'none';
+            }
+        });
+
+        console.log('📁 Collapsed root directory:', rootPath);
+        updateStatus(`Collapsed: ${getBaseName(rootPath)}`);
+    } else {
+        // 展开根目录
+        if (rootItem) {
+            rootItem.classList.add('expanded');
+            if (expandIcon) {
+                expandIcon.textContent = '▼';
+                expandIcon.title = `Click to collapse ${getBaseName(rootPath)}`;
+            }
+        }
+
+        // 显示所有子项
+        const allItems = document.querySelectorAll('.file-item');
+        allItems.forEach(item => {
+            item.style.display = 'block';
+        });
+
+        console.log('📁 Expanded root directory:', rootPath);
+        updateStatus(`Expanded: ${getBaseName(rootPath)}`);
     }
 }
 
@@ -235,17 +512,21 @@ async function toggleDirectory(dirPath) {
         // 如果还没有加载过这个目录的内容，先加载
         if (!fileTree.has(dirPath)) {
             try {
+                console.log('📁 Loading directory contents for:', dirPath);
                 const result = await ipcRenderer.invoke('read-directory', dirPath);
                 if (result.success) {
+                    console.log('📁 Loaded', result.items.length, 'items from:', dirPath);
                     fileTree.set(dirPath, result.items);
                 } else {
                     console.error('❌ Error loading directory:', result.error);
                     expandedDirectories.delete(dirPath); // 加载失败时取消展开
+                    updateStatus('Error loading directory');
                     return;
                 }
             } catch (error) {
                 console.error('❌ Error loading directory:', error);
                 expandedDirectories.delete(dirPath);
+                updateStatus('Error loading directory');
                 return;
             }
         }
@@ -257,7 +538,9 @@ async function toggleDirectory(dirPath) {
     if (currentWorkspace) {
         const rootItems = fileTree.get(currentWorkspace);
         if (rootItems) {
+            console.log('🔄 Re-rendering file explorer after toggle');
             renderFileExplorer(rootItems, currentWorkspace);
+            updateStatus(`${expandedDirectories.has(dirPath) ? 'Expanded' : 'Collapsed'}: ${getBaseName(dirPath)}`);
         }
     }
 }
@@ -291,7 +574,7 @@ async function openFile(filePath) {
             // 切换到新文件
             switchToFile(filePath);
 
-            updateStatus(`Opened: ${path.basename(filePath)}`);
+            updateStatus(`Opened: ${getBaseName(filePath)}`);
         } else {
             console.error('❌ Error opening file:', result.error);
             updateStatus('Error opening file');
@@ -310,7 +593,7 @@ function createTab(filePath) {
     tab.className = 'tab';
     tab.dataset.filePath = filePath;
 
-    const fileName = path.basename(filePath);
+    const fileName = getBaseName(filePath);
     tab.innerHTML = `
         <span class="tab-name">${fileName}</span>
         <span class="close-btn" onclick="closeFile('${filePath}')">&times;</span>
@@ -357,7 +640,7 @@ function switchToFile(filePath) {
     // 聚焦编辑器
     editor.focus();
 
-    updateStatus(`Editing: ${path.basename(filePath)}`);
+    updateStatus(`Editing: ${getBaseName(filePath)}`);
 }
 
 /**
@@ -368,7 +651,7 @@ function closeFile(filePath) {
 
     // 如果文件已修改，询问是否保存
     if (fileData && fileData.modified) {
-        const result = confirm(`Save changes to ${path.basename(filePath)}?`);
+        const result = confirm(`Save changes to ${getBaseName(filePath)}?`);
         if (result) {
             saveFile(filePath);
         }
@@ -417,7 +700,7 @@ async function saveFile(filePath = activeFile) {
             fileData.originalContent = content;
             fileData.modified = false;
             updateTabModifiedState(filePath);
-            updateStatus(`Saved: ${path.basename(filePath)}`);
+            updateStatus(`Saved: ${getBaseName(filePath)}`);
         } else {
             console.error('❌ Error saving file:', result.error);
             updateStatus('Error saving file');
@@ -436,7 +719,7 @@ function updateTabModifiedState(filePath) {
     if (tab) {
         const fileData = openFiles.get(filePath);
         const tabName = tab.querySelector('.tab-name');
-        const fileName = path.basename(filePath);
+        const fileName = getBaseName(filePath);
 
         if (fileData.modified) {
             tabName.textContent = `● ${fileName}`;
@@ -508,6 +791,8 @@ document.addEventListener('keydown', (e) => {
  * 显示右键菜单
  */
 function showContextMenu(x, y, targetPath, isDirectory) {
+    console.log('🖱️ Showing context menu for:', targetPath, 'isDirectory:', isDirectory);
+
     const contextMenu = document.getElementById('contextMenu');
     contextMenu.style.display = 'block';
     contextMenu.style.left = `${x}px`;
@@ -516,6 +801,21 @@ function showContextMenu(x, y, targetPath, isDirectory) {
     // 存储当前右键点击的路径
     contextMenu.dataset.targetPath = targetPath;
     contextMenu.dataset.isDirectory = isDirectory;
+
+    // 根据是否为根目录显示/隐藏重命名和删除选项
+    const renameMenuItem = document.getElementById('renameMenuItem');
+    const deleteMenuItem = document.getElementById('deleteMenuItem');
+    const isRootDirectory = targetPath === currentWorkspace;
+
+    console.log('🖱️ Is root directory:', isRootDirectory);
+
+    if (isRootDirectory) {
+        renameMenuItem.style.display = 'none';
+        deleteMenuItem.style.display = 'none';
+    } else {
+        renameMenuItem.style.display = 'block';
+        deleteMenuItem.style.display = 'block';
+    }
 }
 
 /**
@@ -530,38 +830,79 @@ function hideContextMenu() {
  * 创建新文件
  */
 async function createNewFile() {
-    const contextMenu = document.getElementById('contextMenu');
-    const targetPath = contextMenu.dataset.targetPath;
-    const isDirectory = contextMenu.dataset.isDirectory === 'true';
-
-    hideContextMenu();
-
-    const fileName = prompt('Enter file name:');
-    if (!fileName) return;
+    console.log('📄 Creating new file...');
 
     try {
-        // 确定文件路径
-        const filePath = isDirectory ?
-            path.join(targetPath, fileName) :
-            path.join(path.dirname(targetPath), fileName);
+        const contextMenu = document.getElementById('contextMenu');
+        const targetPath = contextMenu.dataset.targetPath;
+        const isDirectory = contextMenu.dataset.isDirectory === 'true';
+
+        console.log('📄 Target path:', targetPath, 'isDirectory:', isDirectory);
+
+        hideContextMenu();
+
+        // 使用自定义对话框
+        const fileName = await showModal('New File', 'Enter file name...', 'new-file.txt');
+        console.log('📄 User entered file name:', fileName);
+
+        if (!fileName || fileName.trim() === '') {
+            console.log('📄 File creation cancelled - no name provided');
+            updateStatus('File creation cancelled');
+            return;
+        }
+
+        const cleanFileName = fileName.trim();
+        console.log('📄 Creating file with clean name:', cleanFileName);
+
+        // 改进路径处理
+        let filePath;
+        console.log('📄 Current workspace:', currentWorkspace);
+
+        if (isDirectory) {
+            // 如果右键点击的是目录，在该目录下创建文件
+            filePath = targetPath.endsWith('/') ? targetPath + cleanFileName : targetPath + '/' + cleanFileName;
+            console.log('📄 Creating file in directory:', targetPath);
+        } else {
+            // 如果右键点击的是文件，在该文件的父目录下创建文件
+            const lastSlash = Math.max(targetPath.lastIndexOf('/'), targetPath.lastIndexOf('\\'));
+            const parentDir = lastSlash > 0 ? targetPath.substring(0, lastSlash) : currentWorkspace || targetPath;
+            filePath = parentDir.endsWith('/') || parentDir.endsWith('\\') ? parentDir + cleanFileName : parentDir + '/' + cleanFileName;
+            console.log('📄 Creating file in parent directory of:', targetPath, 'which is:', parentDir);
+        }
+
+        console.log('📄 Final file path:', filePath);
 
         // 创建空文件
-        const result = await ipcRenderer.invoke('write-file', filePath, '');
+        updateStatus('Creating file...');
+        console.log('📄 Invoking write-file IPC with path:', filePath);
 
-        if (result.success) {
-            console.log('✅ Created new file:', filePath);
-            updateStatus(`Created: ${fileName}`);
+        try {
+            const result = await ipcRenderer.invoke('write-file', filePath, '// New file created by Mini VSCode\n');
+            console.log('📄 Write file result:', JSON.stringify(result, null, 2));
 
-            // 刷新文件资源管理器
-            await refreshExplorer();
-        } else {
-            console.error('❌ Error creating file:', result.error);
-            updateStatus('Error creating file');
-            alert('Error creating file: ' + result.error);
+            if (result && result.success) {
+                console.log('✅ Successfully created new file:', filePath);
+                updateStatus(`Created: ${cleanFileName}`);
+
+                // 刷新文件资源管理器
+                console.log('🔄 Refreshing explorer after file creation...');
+                await refreshExplorer();
+                console.log('✅ Explorer refresh completed');
+            } else {
+                const errorMsg = result ? result.error : 'No result returned from write-file';
+                console.error('❌ Error creating file:', errorMsg);
+                updateStatus('Error creating file: ' + errorMsg);
+                alert('Error creating file: ' + errorMsg);
+            }
+        } catch (error) {
+            console.error('❌ Exception during file creation:', error);
+            console.error('❌ Error stack:', error.stack);
+            updateStatus('Exception creating file: ' + error.message);
+            alert('Exception creating file: ' + error.message);
         }
     } catch (error) {
-        console.error('❌ Error creating file:', error);
-        updateStatus('Error creating file');
+        console.error('❌ Exception in createNewFile:', error);
+        updateStatus('Error: ' + error.message);
         alert('Error creating file: ' + error.message);
     }
 }
@@ -576,14 +917,17 @@ async function createNewFolder() {
 
     hideContextMenu();
 
-    const folderName = prompt('Enter folder name:');
-    if (!folderName) return;
+    const folderName = await showModal('New Folder', 'Enter folder name...', 'new-folder');
+    if (!folderName || folderName.trim() === '') {
+        console.log('📁 Folder creation cancelled');
+        return;
+    }
 
     try {
         // 确定文件夹路径
         const folderPath = isDirectory ?
-            path.join(targetPath, folderName) :
-            path.join(path.dirname(targetPath), folderName);
+            joinPath(targetPath, folderName) :
+            joinPath(getDirName(targetPath), folderName);
 
         // 创建文件夹
         const result = await ipcRenderer.invoke('create-directory', folderPath);
@@ -607,20 +951,137 @@ async function createNewFolder() {
 }
 
 /**
+ * 重命名文件或文件夹
+ */
+async function renameItem() {
+    const contextMenu = document.getElementById('contextMenu');
+    const targetPath = contextMenu.dataset.targetPath;
+    const isDirectory = contextMenu.dataset.isDirectory === 'true';
+
+    hideContextMenu();
+
+    const currentName = getBaseName(targetPath);
+    const newName = prompt(`Rename ${isDirectory ? 'folder' : 'file'}:`, currentName);
+
+    if (!newName || newName === currentName) return;
+
+    try {
+        const parentDir = getDirName(targetPath);
+        const newPath = joinPath(parentDir, newName);
+
+        const result = await ipcRenderer.invoke('rename-item', targetPath, newPath);
+
+        if (result.success) {
+            console.log('✅ Renamed item:', targetPath, '->', newPath);
+            updateStatus(`Renamed: ${currentName} → ${newName}`);
+
+            // 如果重命名的文件当前正在编辑，更新标签页
+            if (!isDirectory && openFiles.has(targetPath)) {
+                const fileData = openFiles.get(targetPath);
+                openFiles.delete(targetPath);
+                openFiles.set(newPath, fileData);
+
+                // 更新标签页
+                const tab = document.querySelector(`[data-file-path="${targetPath}"]`);
+                if (tab) {
+                    tab.dataset.filePath = newPath;
+                    const tabName = tab.querySelector('.tab-name');
+                    if (tabName) {
+                        tabName.textContent = newName;
+                    }
+                }
+
+                // 如果是当前活动文件，更新activeFile
+                if (activeFile === targetPath) {
+                    activeFile = newPath;
+                }
+            }
+
+            // 刷新文件资源管理器
+            await refreshExplorer();
+        } else {
+            console.error('❌ Error renaming item:', result.error);
+            updateStatus('Error renaming item');
+            alert('Error renaming item: ' + result.error);
+        }
+    } catch (error) {
+        console.error('❌ Error renaming item:', error);
+        updateStatus('Error renaming item');
+        alert('Error renaming item: ' + error.message);
+    }
+}
+
+/**
+ * 删除文件或文件夹
+ */
+async function deleteItem() {
+    const contextMenu = document.getElementById('contextMenu');
+    const targetPath = contextMenu.dataset.targetPath;
+    const isDirectory = contextMenu.dataset.isDirectory === 'true';
+
+    hideContextMenu();
+
+    const itemName = getBaseName(targetPath);
+    const confirmMessage = `Are you sure you want to delete ${isDirectory ? 'folder' : 'file'} "${itemName}"?`;
+
+    if (!confirm(confirmMessage)) return;
+
+    try {
+        const result = await ipcRenderer.invoke('delete-item', targetPath, isDirectory);
+
+        if (result.success) {
+            console.log('✅ Deleted item:', targetPath);
+            updateStatus(`Deleted: ${itemName}`);
+
+            // 如果删除的文件当前正在编辑，关闭标签页
+            if (!isDirectory && openFiles.has(targetPath)) {
+                closeFile(targetPath);
+            }
+
+            // 刷新文件资源管理器
+            await refreshExplorer();
+        } else {
+            console.error('❌ Error deleting item:', result.error);
+            updateStatus('Error deleting item');
+            alert('Error deleting item: ' + result.error);
+        }
+    } catch (error) {
+        console.error('❌ Error deleting item:', error);
+        updateStatus('Error deleting item');
+        alert('Error deleting item: ' + error.message);
+    }
+}
+
+/**
  * 刷新文件资源管理器
  */
 async function refreshExplorer() {
     if (currentWorkspace) {
-        console.log('🔄 Refreshing file explorer');
+        console.log('🔄 Refreshing file explorer, current workspace:', currentWorkspace);
 
-        // 清除缓存的文件树
+        // 保存当前展开状态
+        const savedExpandedDirectories = new Set(expandedDirectories);
+
+        // 清除缓存的文件树，但保持展开状态
         fileTree.clear();
-        expandedDirectories.clear();
 
         // 重新加载工作区
         await loadWorkspace(currentWorkspace);
 
+        // 恢复展开状态
+        expandedDirectories = savedExpandedDirectories;
+
+        // 重新渲染以显示展开状态
+        const rootItems = fileTree.get(currentWorkspace);
+        if (rootItems) {
+            renderFileExplorer(rootItems, currentWorkspace);
+        }
+
         updateStatus('Explorer refreshed');
+        console.log('✅ Explorer refresh completed');
+    } else {
+        console.log('⚠️ No current workspace to refresh');
+        updateStatus('No workspace to refresh');
     }
 }
 
@@ -633,5 +1094,78 @@ document.addEventListener('contextmenu', (e) => {
         e.preventDefault();
     }
 });
+
+// 全局错误处理
+window.addEventListener('error', (e) => {
+    console.error('❌ JavaScript Error:', e.error);
+    updateStatus('JavaScript Error: ' + e.message);
+});
+
+window.addEventListener('unhandledrejection', (e) => {
+    console.error('❌ Unhandled Promise Rejection:', e.reason);
+    updateStatus('Promise Error: ' + e.reason);
+});
+
+// 调试面板功能
+let debugLogs = [];
+const originalConsoleLog = console.log;
+const originalConsoleError = console.error;
+
+function addDebugLog(message, type = 'log') {
+    const timestamp = new Date().toLocaleTimeString();
+    debugLogs.push({ timestamp, message, type });
+    if (debugLogs.length > 50) {
+        debugLogs.shift(); // 保持最新50条日志
+    }
+    updateDebugPanel();
+}
+
+// 重写console.log和console.error来捕获日志
+console.log = function (...args) {
+    originalConsoleLog.apply(console, args);
+    addDebugLog(args.join(' '), 'log');
+};
+
+console.error = function (...args) {
+    originalConsoleError.apply(console, args);
+    addDebugLog(args.join(' '), 'error');
+};
+
+function toggleDebugPanel() {
+    const panel = document.getElementById('debugPanel');
+    const toggle = document.getElementById('debugToggle');
+
+    if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        toggle.style.display = 'none';
+        updateDebugPanel();
+    } else {
+        panel.style.display = 'none';
+        toggle.style.display = 'block';
+    }
+}
+
+function updateDebugPanel() {
+    const content = document.getElementById('debugContent');
+    if (!content) return;
+
+    const statusInfo = `
+        <div style="margin-bottom: 10px; padding: 5px; background: #2d2d30; border-radius: 3px;">
+            <strong>Status:</strong><br>
+            Workspace: ${currentWorkspace || 'None'}<br>
+            Expanded Dirs: ${expandedDirectories.size}<br>
+            File Tree Size: ${fileTree.size}
+        </div>
+    `;
+
+    const logsHtml = debugLogs.slice(-10).map(log =>
+        `<div style="color: ${log.type === 'error' ? '#ff6b6b' : '#cccccc'}; margin: 2px 0;">
+            [${log.timestamp}] ${log.message}
+        </div>`
+    ).join('');
+
+    content.innerHTML = statusInfo + logsHtml;
+    content.scrollTop = content.scrollHeight;
+}
 
 console.log('✅ Mini IDE frontend ready!');

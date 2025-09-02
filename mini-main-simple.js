@@ -215,6 +215,94 @@ function setupIPC() {
             return { success: false, error: error.message };
         }
     });
+
+    // 重命名文件或文件夹
+    ipcMain.handle('rename-item', async (event, oldPath, newPath) => {
+        try {
+            await fs.promises.rename(oldPath, newPath);
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+
+    // 删除文件或文件夹
+    ipcMain.handle('delete-item', async (event, itemPath, isDirectory) => {
+        try {
+            if (isDirectory) {
+                await fs.promises.rmdir(itemPath, { recursive: true });
+            } else {
+                await fs.promises.unlink(itemPath);
+            }
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+
+    // 创建测试工作区
+    ipcMain.handle('create-test-workspace', async (event) => {
+        try {
+            const os = require('os');
+            const testWorkspacePath = path.join(os.tmpdir(), 'mini-vscode-test-workspace');
+
+            console.log('🧪 Creating test workspace at:', testWorkspacePath);
+
+            // 清理现有的测试工作区
+            if (await fs.promises.access(testWorkspacePath).then(() => true).catch(() => false)) {
+                await fs.promises.rm(testWorkspacePath, { recursive: true, force: true });
+            }
+
+            // 创建目录
+            await fs.promises.mkdir(testWorkspacePath, { recursive: true });
+
+            // 创建测试文件
+            await fs.promises.writeFile(
+                path.join(testWorkspacePath, 'test.txt'),
+                'This is a test file created by Mini VSCode\n\nYou can edit this file to test the editor functionality.'
+            );
+
+            await fs.promises.writeFile(
+                path.join(testWorkspacePath, 'script.js'),
+                'console.log("Hello from Mini VSCode!");\n\n// This is a JavaScript test file\nfunction greet(name) {\n    return `Hello, ${name}!`;\n}\n\ngreet("World");'
+            );
+
+            await fs.promises.writeFile(
+                path.join(testWorkspacePath, 'README.md'),
+                '# Mini VSCode Test Workspace\n\nThis is a test workspace created by Mini VSCode.\n\n## Features to test:\n\n- [ ] File creation\n- [ ] Folder creation\n- [ ] File editing\n- [ ] File deletion\n- [ ] Folder expansion'
+            );
+
+            // 创建测试子目录
+            const subDir = path.join(testWorkspacePath, 'folder1');
+            await fs.promises.mkdir(subDir);
+
+            await fs.promises.writeFile(
+                path.join(subDir, 'nested.txt'),
+                'This is a nested file inside folder1'
+            );
+
+            await fs.promises.writeFile(
+                path.join(subDir, 'component.js'),
+                'export default function Component() {\n    return "Hello from component!";\n}'
+            );
+
+            // 创建更深的嵌套
+            const deepDir = path.join(subDir, 'subfolder');
+            await fs.promises.mkdir(deepDir);
+
+            await fs.promises.writeFile(
+                path.join(deepDir, 'deep.txt'),
+                'This is a deeply nested file'
+            );
+
+            console.log('✅ Test workspace created successfully at:', testWorkspacePath);
+            return { success: true, path: testWorkspacePath };
+
+        } catch (error) {
+            console.error('❌ Error creating test workspace:', error);
+            return { success: false, error: error.message };
+        }
+    });
 }
 
 /**

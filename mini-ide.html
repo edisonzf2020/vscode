@@ -84,15 +84,17 @@
 
         .file-item .expand-icon {
             position: absolute;
-            left: -15px;
-            width: 12px;
-            height: 12px;
+            width: 16px;
+            height: 16px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 10px;
+            font-size: 12px;
             color: #cccccc;
+            user-select: none;
+            top: 50%;
+            transform: translateY(-50%);
         }
 
         .file-item.directory .expand-icon::before {
@@ -201,7 +203,7 @@
             font-size: 12px;
         }
 
-        .welcome-screen {
+        .welcome-screen, .explorer-welcome {
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -210,13 +212,13 @@
             text-align: center;
         }
 
-        .welcome-screen h1 {
+        .welcome-screen h1, .explorer-welcome h1 {
             font-size: 24px;
             margin-bottom: 20px;
             color: #007acc;
         }
 
-        .welcome-screen p {
+        .welcome-screen p, .explorer-welcome p {
             font-size: 14px;
             opacity: 0.8;
             margin-bottom: 10px;
@@ -284,6 +286,92 @@
             background-color: #3c3c3c;
             margin: 4px 0;
         }
+
+        /* 模态对话框样式 */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 2000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal {
+            background-color: #2d2d30;
+            border: 1px solid #3c3c3c;
+            border-radius: 6px;
+            min-width: 300px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+        }
+
+        .modal-header {
+            padding: 16px 20px 12px;
+            border-bottom: 1px solid #3c3c3c;
+        }
+
+        .modal-header h3 {
+            margin: 0;
+            font-size: 14px;
+            font-weight: 600;
+            color: #cccccc;
+        }
+
+        .modal-body {
+            padding: 16px 20px;
+        }
+
+        .modal-body input {
+            width: 100%;
+            padding: 8px 12px;
+            background-color: #1e1e1e;
+            border: 1px solid #3c3c3c;
+            border-radius: 3px;
+            color: #cccccc;
+            font-size: 13px;
+            outline: none;
+        }
+
+        .modal-body input:focus {
+            border-color: #007acc;
+        }
+
+        .modal-footer {
+            padding: 12px 20px 16px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        .modal-btn {
+            padding: 6px 16px;
+            border: none;
+            border-radius: 3px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        .modal-btn-cancel {
+            background-color: #3c3c3c;
+            color: #cccccc;
+        }
+
+        .modal-btn-cancel:hover {
+            background-color: #4c4c4c;
+        }
+
+        .modal-btn-ok {
+            background-color: #007acc;
+            color: white;
+        }
+
+        .modal-btn-ok:hover {
+            background-color: #005a9e;
+        }
     </style>
 </head>
 <body>
@@ -292,7 +380,7 @@
         <div class="sidebar">
             <div class="sidebar-header">Explorer</div>
             <div class="file-explorer" id="fileExplorer">
-                <div class="welcome-screen">
+                <div class="explorer-welcome">
                     <h1>Mini VSCode</h1>
                     <p>Welcome to your minimal IDE!</p>
                     <p>Open a folder to get started.</p>
@@ -327,8 +415,39 @@
         <div class="context-menu-item" onclick="createNewFile()">New File</div>
         <div class="context-menu-item" onclick="createNewFolder()">New Folder</div>
         <div class="context-menu-separator"></div>
+        <div class="context-menu-item" onclick="renameItem()" id="renameMenuItem">Rename</div>
+        <div class="context-menu-item" onclick="deleteItem()" id="deleteMenuItem">Delete</div>
+        <div class="context-menu-separator"></div>
         <div class="context-menu-item" onclick="refreshExplorer()">Refresh</div>
     </div>
+
+    <!-- 自定义输入对话框 -->
+    <div class="modal-overlay" id="modalOverlay" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="modalTitle">Enter Name</h3>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="modalInput" placeholder="Enter name..." />
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn modal-btn-cancel" onclick="hideModal()">Cancel</button>
+                <button class="modal-btn modal-btn-ok" onclick="confirmModal()">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 调试面板 -->
+    <div id="debugPanel" style="position: fixed; bottom: 10px; right: 10px; width: 300px; height: 200px; background: #1e1e1e; border: 1px solid #3c3c3c; border-radius: 5px; padding: 10px; font-family: monospace; font-size: 11px; color: #cccccc; overflow-y: auto; z-index: 1500; display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <strong>Debug Panel</strong>
+            <button onclick="toggleDebugPanel()" style="background: #007acc; color: white; border: none; padding: 2px 6px; border-radius: 3px; cursor: pointer;">Hide</button>
+        </div>
+        <div id="debugContent"></div>
+    </div>
+
+    <!-- 调试按钮 -->
+    <button onclick="toggleDebugPanel()" style="position: fixed; bottom: 10px; right: 10px; background: #007acc; color: white; border: none; padding: 8px 12px; border-radius: 3px; cursor: pointer; z-index: 1600; font-size: 12px;" id="debugToggle">Debug</button>
 
     <script src="mini-ide.js"></script>
 </body>

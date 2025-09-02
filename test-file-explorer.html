@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Explorer Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1e1e1e;
+            color: #cccccc;
+            margin: 20px;
+        }
+
+        .file-explorer {
+            width: 300px;
+            background-color: #252526;
+            border: 1px solid #3c3c3c;
+            padding: 10px;
+        }
+
+        .file-item {
+            padding: 4px 8px;
+            cursor: pointer;
+            border-radius: 3px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            position: relative;
+            margin: 2px 0;
+        }
+
+        .file-item:hover {
+            background-color: #2a2d2e;
+        }
+
+        .file-item.directory {
+            font-weight: 500;
+        }
+
+        .file-item.directory::before {
+            content: "📁 ";
+            margin-right: 4px;
+        }
+
+        .file-item.directory.expanded::before {
+            content: "📂 ";
+        }
+
+        .file-item.file::before {
+            content: "📄 ";
+            margin-right: 4px;
+        }
+
+        .expand-icon {
+            position: absolute;
+            left: -15px;
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: #cccccc;
+            user-select: none;
+        }
+
+        .expand-icon::before {
+            content: "▶";
+        }
+
+        .expanded .expand-icon::before {
+            content: "▼";
+        }
+
+        .context-menu {
+            position: fixed;
+            background-color: #2d2d30;
+            border: 1px solid #3c3c3c;
+            border-radius: 3px;
+            padding: 4px 0;
+            z-index: 1000;
+            display: none;
+            min-width: 150px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .context-menu-item {
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #cccccc;
+        }
+
+        .context-menu-item:hover {
+            background-color: #094771;
+        }
+
+        .test-buttons {
+            margin-bottom: 20px;
+        }
+
+        .test-button {
+            padding: 8px 16px;
+            margin: 5px;
+            background-color: #007acc;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+
+        .test-button:hover {
+            background-color: #005a9e;
+        }
+
+        .log {
+            background-color: #1e1e1e;
+            border: 1px solid #3c3c3c;
+            padding: 10px;
+            margin-top: 20px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>File Explorer Test</h1>
+    
+    <div class="test-buttons">
+        <button class="test-button" onclick="testBasicRender()">Test Basic Render</button>
+        <button class="test-button" onclick="testExpandCollapse()">Test Expand/Collapse</button>
+        <button class="test-button" onclick="testRightClick()">Test Right Click</button>
+        <button class="test-button" onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <div class="file-explorer" id="fileExplorer">
+        <div>Click a test button to start</div>
+    </div>
+
+    <!-- 右键菜单 -->
+    <div class="context-menu" id="contextMenu">
+        <div class="context-menu-item" onclick="testNewFile()">New File</div>
+        <div class="context-menu-item" onclick="testNewFolder()">New Folder</div>
+        <div class="context-menu-item" onclick="hideContextMenu()">Cancel</div>
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <script>
+        // 模拟数据
+        const testData = [
+            { name: 'src', isDirectory: true, path: '/test/src' },
+            { name: 'package.json', isDirectory: false, path: '/test/package.json' },
+            { name: 'README.md', isDirectory: false, path: '/test/README.md' },
+            { name: 'node_modules', isDirectory: true, path: '/test/node_modules' }
+        ];
+
+        const subData = {
+            '/test/src': [
+                { name: 'index.js', isDirectory: false, path: '/test/src/index.js' },
+                { name: 'components', isDirectory: true, path: '/test/src/components' }
+            ],
+            '/test/src/components': [
+                { name: 'App.js', isDirectory: false, path: '/test/src/components/App.js' }
+            ]
+        };
+
+        let expandedDirectories = new Set();
+        let currentContextPath = null;
+
+        function log(message) {
+            const logElement = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            logElement.innerHTML += `[${time}] ${message}\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        function testBasicRender() {
+            log('🧪 Testing basic render...');
+            renderFileExplorer(testData, '/test');
+            log('✅ Basic render completed');
+        }
+
+        function testExpandCollapse() {
+            log('🧪 Testing expand/collapse...');
+            expandedDirectories.add('/test/src');
+            renderFileExplorer(testData, '/test');
+            log('✅ Expand/collapse test completed');
+        }
+
+        function testRightClick() {
+            log('🧪 Right-click on any item to test context menu');
+        }
+
+        function renderFileExplorer(items, basePath, level = 0) {
+            const fileExplorer = document.getElementById('fileExplorer');
+            
+            if (level === 0) {
+                fileExplorer.innerHTML = '';
+                log(`🎨 Rendering ${items.length} items`);
+            }
+
+            items.forEach(item => {
+                const fileItem = document.createElement('div');
+                const paddingLeft = 20 + (level * 20);
+                
+                if (item.isDirectory) {
+                    fileItem.className = 'file-item directory';
+                    const isExpanded = expandedDirectories.has(item.path);
+                    if (isExpanded) {
+                        fileItem.classList.add('expanded');
+                    }
+                    
+                    fileItem.style.paddingLeft = `${paddingLeft + 20}px`;
+                    
+                    // 添加展开图标
+                    const expandIcon = document.createElement('span');
+                    expandIcon.className = 'expand-icon';
+                    expandIcon.style.left = `${paddingLeft}px`;
+                    expandIcon.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        toggleDirectory(item.path);
+                    });
+                    
+                    fileItem.appendChild(expandIcon);
+                    
+                    fileItem.addEventListener('click', (e) => {
+                        if (!e.target.classList.contains('expand-icon')) {
+                            toggleDirectory(item.path);
+                        }
+                    });
+                } else {
+                    fileItem.className = 'file-item file';
+                    fileItem.style.paddingLeft = `${paddingLeft}px`;
+                    
+                    fileItem.addEventListener('click', () => {
+                        log(`📄 File clicked: ${item.name}`);
+                    });
+                }
+                
+                fileItem.textContent = item.name;
+                fileItem.dataset.path = item.path;
+                
+                // 右键菜单
+                fileItem.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    showContextMenu(e.clientX, e.clientY, item.path);
+                });
+                
+                fileExplorer.appendChild(fileItem);
+                
+                // 递归渲染子项
+                if (item.isDirectory && expandedDirectories.has(item.path)) {
+                    const children = subData[item.path];
+                    if (children) {
+                        renderFileExplorer(children, item.path, level + 1);
+                    }
+                }
+            });
+        }
+
+        function toggleDirectory(dirPath) {
+            log(`📁 Toggling directory: ${dirPath}`);
+            
+            if (expandedDirectories.has(dirPath)) {
+                expandedDirectories.delete(dirPath);
+                log(`📁 Collapsed: ${dirPath}`);
+            } else {
+                expandedDirectories.add(dirPath);
+                log(`📁 Expanded: ${dirPath}`);
+            }
+            
+            renderFileExplorer(testData, '/test');
+        }
+
+        function showContextMenu(x, y, path) {
+            log(`🖱️ Right-click on: ${path}`);
+            const contextMenu = document.getElementById('contextMenu');
+            contextMenu.style.display = 'block';
+            contextMenu.style.left = `${x}px`;
+            contextMenu.style.top = `${y}px`;
+            currentContextPath = path;
+        }
+
+        function hideContextMenu() {
+            document.getElementById('contextMenu').style.display = 'none';
+        }
+
+        function testNewFile() {
+            log(`📄 New file requested for: ${currentContextPath}`);
+            hideContextMenu();
+        }
+
+        function testNewFolder() {
+            log(`📁 New folder requested for: ${currentContextPath}`);
+            hideContextMenu();
+        }
+
+        // 点击其他地方隐藏菜单
+        document.addEventListener('click', hideContextMenu);
+
+        log('🚀 Test page loaded');
+    </script>
+</body>
+</html>
